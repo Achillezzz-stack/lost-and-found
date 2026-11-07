@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="A shared list where our group reports lost and found items with a photo and details.">
+<title>Lost and Found List</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,700..900&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a full-width hi-vis counter-sign band on top, then a filter toolbar and a grid of claim-ticket cards (photo, hole punch, stamp, dashed tear line). Reporting and viewing an item open as a bottom sheet on phones and a centered panel on desktop. */
+:root {
+  --bg: #EDF0F3;
+  --surface: #FFFFFF;
+  --surface-2: #F4F6F8;
+  --ink: #172033;
+  --muted: #566176;
+  --line: #D3DAE3;
+  --band: #FFD23F;
+  --band-ink: #172033;
+  --lost: #B93228;
+  --found: #0B7565;
+  --action: #172033;
+  --action-ink: #FFFFFF;
+  --focus: #2F6FED;
+  --shadow: 0 1px 2px rgba(23, 32, 51, .08), 0 6px 18px rgba(23, 32, 51, .06);
+  --scrim: rgba(10, 15, 26, .55);
+  --font-display: 'Archivo', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0E1420;
+    --surface: #162033;
+    --surface-2: #1C2840;
+    --ink: #E8EDF5;
+    --muted: #9AA6BA;
+    --line: #2B3852;
+    --band: #FFD23F;
+    --band-ink: #172033;
+    --lost: #FF8378;
+    --found: #52D6BB;
+    --action: #E8EDF5;
+    --action-ink: #0E1420;
+    --focus: #7FA8FF;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .3);
+    --scrim: rgba(0, 0, 0, .65);
+    color-scheme: dark;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 15px/1.5 var(--font-body);
+  min-height: 100vh;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.wrap {
+  width: 100%;
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.sr, .vh {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+[hidden] { display: none !important; }
+
+/* Band */
+.band { background: var(--band); color: var(--band-ink); padding-top: env(safe-area-inset-top, 0px); }
+.band-inner {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  justify-content: space-between; gap: 20px 32px;
+  padding-top: 26px; padding-bottom: 26px;
+}
+.band-copy { min-width: 0; flex: 1 1 360px; }
+.eyebrow {
+  margin: 0; font: 500 12px/1.2 var(--font-mono);
+  letter-spacing: .14em; text-transform: uppercase;
+}
+h1 {
+  margin: 8px 0 10px;
+  font-family: var(--font-display);
+  font-stretch: 70%;
+  font-weight: 900;
+  font-size: clamp(46px, 11vw, 88px);
+  line-height: .88;
+  letter-spacing: -.005em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.lede { margin: 0; max-width: 48ch; font-size: 16px; }
+.band-side { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.counts { margin: 0; font: 500 13px/1.3 var(--font-mono); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.tape {
+  height: 8px;
+  background: repeating-linear-gradient(-45deg, var(--band-ink) 0 10px, var(--band) 10px 20px);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 18px; border-radius: 6px;
+  border: 1.5px solid var(--ink); background: transparent; color: var(--ink);
+  font-weight: 600; font-size: 15px; cursor: pointer; text-align: center;
+}
+.btn:hover { background: var(--surface-2); }
+.btn[disabled] { opacity: .55; cursor: default; }
+.btn-primary { background: var(--action); color: var(--action-ink); border-color: var(--action); }
+.btn-primary:hover { background: var(--action); opacity: .9; }
+.btn-band { background: var(--band-ink); color: var(--band); border-color: var(--band-ink); }
+.btn-band:hover { background: var(--band-ink); opacity: .9; }
+.link-btn {
+  border: 0; background: none; padding: 2px 6px; margin-left: 6px; cursor: pointer;
+  font: 600 13px var(--font-body); color: var(--ink); text-decoration: underline; text-underline-offset: 3px;
+}
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 6px; border: 1.5px solid var(--line);
+  background: var(--surface); font-size: 26px; line-height: 1; cursor: pointer;
+}
+
+/* Toolbar */
+.tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 18px; padding-top: 22px; padding-bottom: 6px; }
+.search { flex: 1 1 100%; min-width: 0; }
+.ctl { display: grid; gap: 4px; min-width: 0; }
+.ctl-label { font: 500 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.input, .select, .textarea {
+  width: 100%; min-height: 44px; padding: 10px 12px; font-size: 16px;
+  border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink);
+}
+.textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--ink); }
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg button {
+  min-height: 42px; padding: 0 14px; border: 0; background: transparent; color: var(--muted);
+  font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.seg button + button { border-left: 1.5px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--action); color: var(--action-ink); }
+.note { margin: 12px 0 0; padding: 10px 12px; border: 1.5px dashed var(--line); border-radius: 6px; background: var(--surface); font-size: 14px; color: var(--muted); }
+
+/* Grid and cards */
+.grid {
+  list-style: none; margin: 0; padding: 16px 0 56px; display: grid; gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+.card {
+  position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
+}
+.card:hover { border-color: var(--ink); }
+.photo { position: relative; aspect-ratio: 4 / 3; max-width: 100%; background: var(--surface-2); border-bottom: 1.5px dashed var(--line); }
+.photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.nophoto {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font: 500 12px var(--font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  background: repeating-linear-gradient(135deg, transparent 0 9px, var(--line) 9px 10px);
+}
+.hole {
+  position: absolute; top: 10px; left: 10px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--bg); border: 1.5px solid var(--line);
+}
+.stamp {
+  position: absolute; right: 10px; bottom: 10px; padding: 6px 8px;
+  font: 600 12px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase;
+  border: 2px solid currentColor; border-radius: 3px; background: var(--surface); transform: rotate(-3deg);
+}
+.stamp.inline { position: static; display: inline-block; }
+.stamp.lost { color: var(--lost); }
+.stamp.found { color: var(--found); }
+.stamp.returned { color: var(--muted); }
+.card.returned .photo img { filter: grayscale(1); opacity: .6; }
+.card.returned .card-title { color: var(--muted); }
+.card-body { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; padding: 14px 16px 12px; }
+.ticket { margin: 0; font: 500 12px/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+.card-title {
+  appearance: none; background: none; border: 0; padding: 0; margin: 0; text-align: left; cursor: pointer;
+  font: 700 18px/1.25 var(--font-body); color: var(--ink); overflow-wrap: anywhere; width: 100%;
+}
+.card-title::after { content: ""; position: absolute; inset: 0; }
+.card-title:focus-visible { outline: none; }
+.card-title:focus-visible::after { outline: 3px solid var(--focus); outline-offset: -3px; border-radius: 8px; }
+.desc {
+  margin: 0; color: var(--muted); font-size: 14px; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.fact { margin-top: 2px; font-size: 13px; overflow-wrap: anywhere; }
+.k { margin-right: 8px; font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.card-foot {
+  display: flex; justify-content: space-between; gap: 12px; padding: 9px 16px;
+  border-top: 1.5px dashed var(--line); font-size: 12.5px; color: var(--muted);
+}
+.card-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-foot .when { flex: none; font-family: var(--font-mono); font-size: 12px; }
+
+/* Empty state */
+.empty {
+  margin: 20px 0 56px; padding: 36px 20px; text-align: center;
+  border: 2px dashed var(--line); border-radius: 8px; background: var(--surface);
+}
+.empty h2 { margin: 0 0 6px; font: 800 24px/1.15 var(--font-display); font-stretch: 80%; text-transform: uppercase; }
+.empty p { margin: 0 auto 16px; max-width: 44ch; color: var(--muted); }
+
+/* Sheet */
+.overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; background: var(--scrim); }
+.sheet {
+  width: 100%; max-width: 620px; max-height: 92vh; max-height: 92dvh; overflow-y: auto;
+  background: var(--surface); color: var(--ink); border-radius: 14px 14px 0 0;
+  padding-top: 18px; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, .25);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+@media (min-width: 700px) {
+  .overlay { align-items: center; padding: 24px; }
+  .sheet { border-radius: 10px; max-height: 90vh; max-height: 90dvh; padding-left: 28px; padding-right: 28px; padding-bottom: 26px; }
+}
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sheet-title { margin: 0 0 10px; font: 800 28px/1.1 var(--font-display); font-stretch: 85%; text-wrap: balance; overflow-wrap: anywhere; }
+.sheet-head .sheet-title { margin: 0; }
+.sheet-title:focus { outline: none; }
+.d-photo { display: grid; place-items: center; margin-bottom: 16px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.d-photo img { display: block; width: auto; max-width: 100%; max-height: min(52vh, 420px); object-fit: contain; }
+.d-desc { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 16px; margin: 18px 0; padding: 14px 0; border-top: 1.5px dashed var(--line); border-bottom: 1.5px dashed var(--line); }
+.dl dt { padding-top: 3px; font: 500 11px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.dl dd { margin: 0; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fine { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
+
+/* Form */
+.form { display: grid; gap: 18px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > label, .field > .lbl { font-weight: 600; font-size: 14px; }
+.opt { font-weight: 400; color: var(--muted); }
+.hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+.err { margin: 0; font-size: 13px; font-weight: 600; color: var(--lost); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 520px) { .row2 { grid-template-columns: 1fr; } }
+.typepick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pick { position: relative; display: block; }
+.pick input { position: absolute; opacity: 0; pointer-events: none; }
+.pick-box { display: grid; gap: 2px; height: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.pick-box small { color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+.pick input:checked + .pick-box { border-color: var(--ink); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--ink); }
+.pick input:focus-visible + .pick-box { outline: 3px solid var(--focus); outline-offset: 2px; }
+.photo-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+.photo-preview {
+  width: 160px; max-width: 100%; aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden;
+  border: 1.5px dashed var(--line); border-radius: 6px; background: var(--surface-2);
+  font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+.photo-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-side { display: grid; gap: 8px; flex: 1 1 200px; min-width: 0; justify-items: start; }
+.photo-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.vh:focus-visible + .btn { outline: 3px solid var(--focus); outline-offset: 2px; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.form-error { margin: 0; padding: 10px 12px; border: 1.5px solid var(--lost); border-radius: 6px; color: var(--lost); font-weight: 600; font-size: 14px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 80;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 6px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<!-- STEP 1 OF SETUP: replace the PASTE_ values below with your own Firebase settings (see SETUP.md). -->
+<script>
+window.LF_FIREBASE = {
+  apiKey: "AIzaSyAGSJHy7bBKYnNIh7gk9_EwAEWJPrCErEM",
+  authDomain: "our-lost-and-found.firebaseapp.com",
+  projectId: "our-lost-and-found",
+  storageBucket: "our-lost-and-found.firebasestorage.app",
+  messagingSenderId: "1002958410480",
+  appId: "1:1002958410480:web:4877fd5bbebc56a7722835"
+};
+</script>
+
+<header class="band">
+  <div class="wrap band-inner">
+    <div class="band-copy">
+      <p class="eyebrow">Group lost property</p>
+      <h1>Lost &amp; Found</h1>
+      <p class="lede">Report something you lost or found, add a photo, and mark it returned once it is back with its owner.</p>
+    </div>
+    <div class="band-side">
+      <button id="addBtn" class="btn btn-band" type="button" hidden>Report an item</button>
+      <p id="counts" class="counts" aria-live="polite"></p>
+    </div>
+  </div>
+</header>
+<div class="tape" aria-hidden="true"></div>
+
+<main class="wrap">
+  <section class="tools" aria-label="Search and filter the list">
+    <div class="search">
+      <label class="sr" for="q">Search the list</label>
+      <input id="q" class="input" type="search" placeholder="Search by item, place, color or name" autocomplete="off">
+    </div>
+    <div class="ctl">
+      <span class="ctl-label" id="l-type">Type</span>
+      <div class="seg" role="group" aria-labelledby="l-type">
+        <button type="button" data-k="type" data-v="all" aria-pressed="true">All</button>
+        <button type="button" data-k="type" data-v="lost" aria-pressed="false">Lost</button>
+        <button type="button" data-k="type" data-v="found" aria-pressed="false">Found</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label" id="l-status">Status</span>
+      <div class="seg" role="group" aria-labelledby="l-status">
+        <button type="button" data-k="status" data-v="open" aria-pressed="true">Open</button>
+        <button type="button" data-k="status" data-v="returned" aria-pressed="false">Returned</button>
+        <button type="button" data-k="status" data-v="all" aria-pressed="false">All</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <label class="ctl-label" for="cat">Category</label>
+      <select id="cat" class="select"></select>
+    </div>
+  </section>
+  <p id="note" class="note" role="status" hidden></p>
+  <ul id="list" class="grid"></ul>
+  <div id="empty" class="empty" hidden></div>
+  <noscript><p class="note">This list needs JavaScript. Turn it on in your browser and reload.</p></noscript>
+</main>
+
+<div id="overlay" class="overlay" hidden>
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true"></div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+  var CATS = ['Bags', 'Electronics', 'Wallets & cards', 'Keys', 'Clothing', 'Bottles & containers', 'Books & stationery', 'Glasses & jewelry', 'Other'];
+  var LABEL = { lost: 'Lost', found: 'Found', returned: 'Returned' };
+  var PHOTO_LIMIT = 150000;
+
+  var $ = function (s) { return document.querySelector(s); };
+  var listEl = $('#list'), emptyEl = $('#empty'), noteEl = $('#note');
+  var countsEl = $('#counts'), addBtn = $('#addBtn'), overlay = $('#overlay'), sheet = $('#sheet'), toastEl = $('#toast');
+
+  var store = null, items = [], loaded = false, busy = false;
+  var current = null, lastFocus = null, toastTimer = 0;
+  var filters = { type: 'all', status: 'open', cat: '', q: '' };
+
+  /* ---------- helpers ---------- */
+  function h(tag, attrs) {
+    var e = document.createElement(tag);
+    if (attrs) {
+      for (var k in attrs) {
+        var v = attrs[k];
+        if (v === null || v === undefined || v === false) continue;
+        if (k === 'class') e.className = v;
+        else if (k === 'text') e.textContent = v;
+        else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v);
+        else e.setAttribute(k, v === true ? '' : v);
+      }
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var kid = arguments[i];
+      if (kid === null || kid === undefined || kid === false) continue;
+      e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    }
+    return e;
+  }
+  function str(v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; }
+  /* Everything from the database is treated as untrusted text. */
+  function norm(id, d) {
+    var photo = (typeof d.photo === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(d.photo.slice(0, 40))) ? d.photo : '';
+    return {
+      id: id,
+      type: d.type === 'found' ? 'found' : 'lost',
+      name: str(d.name, 120),
+      category: str(d.category, 40),
+      description: str(d.description, 1500),
+      place: str(d.place, 120),
+      date: str(d.date, 10),
+      photo: photo,
+      reporter: str(d.reporter, 60),
+      contact: str(d.contact, 120),
+      status: d.status === 'returned' ? 'returned' : 'open',
+      createdAt: typeof d.createdAt === 'number' ? d.createdAt : 0
+    };
+  }
+  function byId(id) { for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i]; return null; }
+  function ticket(it) { return 'LF-' + it.id.slice(0, 4).toUpperCase() + (it.category ? ' · ' + it.category : ''); }
+  function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function fmtDate(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+    if (!m) return '';
+    var d = new Date(+m[1], +m[2] - 1, +m[3]);
+    var opts = { weekday: 'short', day: 'numeric', month: 'short' };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+    return d.toLocaleDateString(undefined, opts);
+  }
+  var mem = {
+    get: function (k) { try { return localStorage.getItem('lf-' + k) || ''; } catch (e) { return ''; } },
+    set: function (k, v) { try { localStorage.setItem('lf-' + k, v); } catch (e) {} }
+  };
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 3200);
+  }
+  function setNote(msg) { if (msg) { noteEl.textContent = msg; noteEl.hidden = false; } else noteEl.hidden = true; }
+  function failText(e) {
+    var c = e && e.code;
+    if (c === 'permission-denied') return 'The database refused that. Check the rules in SETUP.md.';
+    if (c === 'resource-exhausted') return 'The free daily limit was reached. Try again tomorrow.';
+    return 'That did not save. Check your connection and try again.';
+  }
+
+  /* ---------- filtering and list ---------- */
+  function match(it) {
+    if (filters.type !== 'all' && it.type !== filters.type) return false;
+    if (filters.status === 'open' && it.status === 'returned') return false;
+    if (filters.status === 'returned' && it.status !== 'returned') return false;
+    if (filters.cat && it.category !== filters.cat) return false;
+    if (filters.q) {
+      var hay = (it.name + ' ' + it.description + ' ' + it.place + ' ' + it.category + ' ' + it.reporter).toLowerCase();
+      var words = filters.q.toLowerCase().split(/\s+/);
+      for (var i = 0; i < words.length; i++) if (words[i] && hay.indexOf(words[i]) === -1) return false;
+    }
+    return true;
+  }
+
+  function card(it) {
+    var state = it.status === 'returned' ? 'returned' : it.type;
+    var photo = h('div', { class: 'photo' },
+      it.photo ? h('img', { src: it.photo, alt: 'Photo of ' + it.name, loading: 'lazy' }) : h('div', { class: 'nophoto', text: 'No photo' }),
+      h('span', { class: 'hole', 'aria-hidden': 'true' }),
+      h('span', { class: 'stamp ' + state, text: LABEL[state] })
+    );
+    var body = h('div', { class: 'card-body' },
+      h('p', { class: 'ticket', text: ticket(it) }),
+      h('button', { type: 'button', class: 'card-title', onclick: function () { openDetail(it.id); } }, it.name || 'Untitled item'),
+      it.description ? h('p', { class: 'desc', text: it.description }) : null,
+      it.place ? h('div', { class: 'fact' }, h('span', { class: 'k', text: 'Where' }), it.place) : null
+    );
+    var foot = h('div', { class: 'card-foot' },
+      h('span', { text: it.reporter ? 'Reported by ' + it.reporter : 'Reporter not given' }),
+      h('span', { class: 'when', text: (it.type === 'lost' ? 'Lost ' : 'Found ') + fmtDate(it.date) })
+    );
+    return h('li', { class: 'card' + (it.status === 'returned' ? ' returned' : '') }, photo, body, foot);
+  }
+
+  function renderEmpty(vis) {
+    emptyEl.replaceChildren();
+    if (!loaded) {
+      if (!store) { emptyEl.hidden = true; return; }
+      emptyEl.append(h('h2', { text: 'Loading the list' }), h('p', { text: 'Getting everyone’s reports.' }));
+      emptyEl.hidden = false; return;
+    }
+    if (items.length === 0) {
+      emptyEl.append(
+        h('h2', { text: 'Nothing on the list yet' }),
+        h('p', { text: 'Lost a water bottle? Found someone’s keys? Report it with a photo and a few details so the owner can recognize it.' }),
+        h('button', { type: 'button', class: 'btn btn-primary', onclick: function () { openForm(); } }, 'Report the first item')
+      );
+      emptyEl.hidden = false; return;
+    }
+    if (vis.length === 0) {
+      emptyEl.append(
+        h('h2', { text: 'No items match' }),
+        h('p', { text: 'Try a different search, or show every type, status and category.' }),
+        h('button', { type: 'button', class: 'btn', onclick: clearFilters }, 'Clear filters')
+      );
+      emptyEl.hidden = false; return;
+    }
+    emptyEl.hidden = true;
+  }
+
+  function render() {
+    var open = items.filter(function (i) { return i.status !== 'returned'; }).length;
+    countsEl.textContent = loaded ? open + ' open · ' + (items.length - open) + ' returned' : '';
+    var vis = items.filter(match);
+    listEl.replaceChildren.apply(listEl, vis.map(card));
+    renderEmpty(vis);
+  }
+
+  function clearFilters() {
+    filters = { type: 'all', status: 'open', cat: '', q: '' };
+    $('#q').value = ''; $('#cat').value = '';
+    syncSeg(); render();
+  }
+  function syncSeg() {
+    document.querySelectorAll('.seg button').forEach(function (b) {
+      b.setAttribute('aria-pressed', filters[b.dataset.k] === b.dataset.v ? 'true' : 'false');
+    });
+  }
+
+  /* ---------- sheet (dialog) ---------- */
+  function showSheet(focusId) {
+    if (overlay.hidden) {
+      lastFocus = document.activeElement;
+      overlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+    }
+    var t = focusId && document.getElementById(focusId);
+    if (t) t.focus();
+  }
+  function closeSheet() {
+    overlay.hidden = true; document.body.style.overflow = '';
+    sheet.replaceChildren(); current = null;
+    if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+  }
+  overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) closeSheet(); });
+  document.addEventListener('keydown', function (e) {
+    if (overlay.hidden) return;
+    if (e.key === 'Escape') { closeSheet(); return; }
+    if (e.key !== 'Tab') return;
+    var f = Array.prototype.filter.call(
+      sheet.querySelectorAll('button, input, select, textarea, a[href]'),
+      function (n) { return !n.disabled && n.type !== 'hidden'; }
+    );
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+
+  /* ---------- detail ---------- */
+  function openDetail(id) {
+    current = { mode: 'detail', id: id };
+    renderDetail(byId(id), 'd-close');
+  }
+
+  function copyText(text, node) {
+    var fallback = function () {
+      try {
+        var r = document.createRange(); r.selectNodeContents(node);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        toast('Selected. Use Copy on your device.');
+      } catch (e) {}
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('Copied'); }, fallback);
+    } else fallback();
+  }
+
+  function renderDetail(it, focusId) {
+    if (!it) return;
+    var active = document.activeElement;
+    var keep = active && sheet.contains(active) ? active.id : '';
+    var state = it.status === 'returned' ? 'returned' : it.type;
+    var kids = [];
+    kids.push(h('div', { class: 'sheet-head' },
+      h('span', { class: 'stamp inline ' + state, text: LABEL[state] }),
+      h('button', { type: 'button', class: 'icon-btn', id: 'd-close', 'aria-label': 'Close', onclick: closeSheet }, '×')
+    ));
+    if (it.photo) kids.push(h('div', { class: 'd-photo' }, h('img', { src: it.photo, alt: 'Photo of ' + it.name })));
+    kids.push(h('p', { class: 'ticket', text: ticket(it) }));
+    kids.push(h('h2', { id: 'd-title', class: 'sheet-title', tabindex: '-1', text: it.name || 'Untitled item' }));
+    if (it.description) kids.push(h('p', { class: 'd-desc', text: it.description }));
+
+    var dl = h('dl', { class: 'dl' });
+    function row(k, v, extra) { dl.append(h('dt', { text: k }), h('dd', null, v, extra || null)); }
+    if (it.place) row(it.type === 'lost' ? 'Lost at' : 'Found at', it.place);
+    if (it.date) row(it.type === 'lost' ? 'Lost on' : 'Found on', fmtDate(it.date));
+    if (it.category) row('Category', it.category);
+    row('Reported by', it.reporter || 'Not given');
+    if (it.contact) {
+      var cs = h('span', { id: 'd-contact', text: it.contact });
+      row('Contact', cs, h('button', { type: 'button', class: 'link-btn', onclick: function () { copyText(it.contact, cs); } }, 'Copy'));
+    }
+    kids.push(dl);
+
+    kids.push(h('div', { class: 'actions' },
+      h('button', { id: 'd-return', class: 'btn btn-primary', type: 'button', onclick: toggleReturned }, it.status === 'returned' ? 'Reopen' : 'Mark as returned')
+    ));
+    kids.push(h('p', { class: 'fine', text: 'To correct or remove this item, ask the site owner.' }));
+
+    sheet.setAttribute('aria-labelledby', 'd-title');
+    sheet.replaceChildren.apply(sheet, kids);
+    sheet.scrollTop = 0;
+    showSheet(focusId || (keep && document.getElementById(keep) ? keep : 'd-close'));
+  }
+
+  async function toggleReturned() {
+    if (busy || !store || !current) return;
+    var it = byId(current.id); if (!it) return;
+    var reopening = it.status === 'returned';
+    busy = true;
+    try {
+      await store.update(it.id, reopening ? { status: 'open', returnedAt: 0 } : { status: 'returned', returnedAt: Date.now() });
+      toast(reopening ? 'Moved back to open' : 'Marked as returned');
+    } catch (e) { toast(failText(e)); }
+    finally { busy = false; }
+  }
+
+  /* ---------- form ---------- */
+  function shrink(file) {
+    if (!/^image\//.test(file.type)) return Promise.reject(new Error('type'));
+    var url = URL.createObjectURL(file);
+    return new Promise(function (res, rej) {
+      var img = new Image();
+      img.onload = function () { res(img); };
+      img.onerror = function () { rej(new Error('decode')); };
+      img.src = url;
+    }).then(function (img) {
+      var maxSide = 900, q = 0.78;
+      for (var n = 0; n < 8; n++) {
+        var s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        var w = Math.max(1, Math.round(img.naturalWidth * s)), hh = Math.max(1, Math.round(img.naturalHeight * s));
+        var cv = document.createElement('canvas'); cv.width = w; cv.height = hh;
+        var ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, hh); ctx.drawImage(img, 0, 0, w, hh);
+        var out = cv.toDataURL('image/jpeg', q);
+        if (out.length <= PHOTO_LIMIT) return out;
+        if (q > 0.5) q -= 0.1; else maxSide = Math.round(maxSide * 0.8);
+      }
+      throw new Error('big');
+    }).then(function (out) { URL.revokeObjectURL(url); return out; },
+            function (err) { URL.revokeObjectURL(url); throw err; });
+  }
+
+  function openForm() {
+    current = { mode: 'form' };
+    var photo = '';
+
+    function pick(value, strong, small) {
+      return h('label', { class: 'pick' },
+        h('input', { type: 'radio', name: 'type', value: value, id: 'f-type-' + value, checked: value === 'lost' }),
+        h('span', { class: 'pick-box' }, h('strong', { text: strong }), h('small', { text: small }))
+      );
+    }
+    var catSel = h('select', { id: 'f-cat', class: 'select' }, h('option', { value: '', text: 'Choose a category' }));
+    CATS.forEach(function (c) { catSel.append(h('option', { value: c, text: c })); });
+
+    var nameIn = h('input', { id: 'f-name', class: 'input', type: 'text', maxlength: '120', placeholder: 'e.g. Blue water bottle', autocomplete: 'off' });
+    var descIn = h('textarea', { id: 'f-desc', class: 'textarea', maxlength: '1000', rows: '4', placeholder: 'Color, brand, stickers, scratches, what is inside, anything that proves it is yours.' });
+    var placeIn = h('input', { id: 'f-place', class: 'input', type: 'text', maxlength: '120', placeholder: 'e.g. Library, 2nd floor', autocomplete: 'off' });
+    var dateIn = h('input', { id: 'f-date', class: 'input', type: 'date', max: todayStr(), value: todayStr() });
+    var whoIn = h('input', { id: 'f-who', class: 'input', type: 'text', maxlength: '60', value: mem.get('name'), autocomplete: 'name' });
+    var contactIn = h('input', { id: 'f-contact', class: 'input', type: 'text', maxlength: '120', placeholder: 'Chat handle or school email', value: mem.get('contact'), autocomplete: 'off' });
+    var eName = h('p', { class: 'err', id: 'e-name', hidden: true });
+    var eWho = h('p', { class: 'err', id: 'e-who', hidden: true });
+    var formErr = h('p', { class: 'form-error', id: 'f-error', role: 'alert', hidden: true });
+
+    var prev = h('div', { class: 'photo-preview', id: 'f-prev' });
+    var photoMsg = h('p', { class: 'hint', id: 'f-photo-msg', text: 'JPG or PNG. Large photos are shrunk to fit.' });
+    var fileIn = h('input', { id: 'f-photo', class: 'vh', type: 'file', accept: 'image/*' });
+    var photoLabel = h('label', { class: 'btn', for: 'f-photo', text: 'Add photo' });
+    var removeBtn = h('button', { type: 'button', class: 'btn', id: 'f-photo-remove', onclick: function () { photo = ''; drawPrev(); photoMsg.textContent = 'Photo removed.'; } }, 'Remove');
+    var submit = h('button', { type: 'submit', class: 'btn btn-primary', id: 'f-submit' }, 'Add to list');
+
+    function drawPrev() {
+      prev.replaceChildren(photo ? h('img', { src: photo, alt: 'Selected photo preview' }) : document.createTextNode('No photo'));
+      removeBtn.hidden = !photo;
+      photoLabel.textContent = photo ? 'Replace photo' : 'Add photo';
+    }
+    drawPrev();
+
+    fileIn.addEventListener('change', function () {
+      var f = fileIn.files && fileIn.files[0];
+      if (!f) return;
+      photoMsg.textContent = 'Preparing photo…'; submit.disabled = true;
+      shrink(f).then(function (out) {
+        photo = out; drawPrev();
+        photoMsg.textContent = 'Photo ready (' + Math.round(out.length * 0.75 / 1024) + ' KB).';
+      }).catch(function (err) {
+        photoMsg.textContent = err && err.message === 'type' ? 'Choose an image file.' : 'That photo can’t be read here. Try a JPG or PNG.';
+      }).then(function () { submit.disabled = false; fileIn.value = ''; });
+    });
+
+    var form = h('form', { class: 'form', novalidate: true },
+      h('div', { class: 'field' },
+        h('span', { class: 'lbl', id: 'f-type-lbl', text: 'What happened?' }),
+        h('div', { class: 'typepick', role: 'radiogroup', 'aria-labelledby': 'f-type-lbl' },
+          pick('lost', 'I lost this', 'Looking for it'),
+          pick('found', 'I found this', 'I have it or know where it is'))
+      ),
+      h('div', { class: 'field' }, h('label', { for: 'f-name', text: 'Item' }), nameIn, eName),
+      h('div', { class: 'field' }, h('label', { for: 'f-cat' }, 'Category ', h('span', { class: 'opt', text: '(optional)' })), catSel),
+      h('div', { class: 'field' },
+        h('label', { for: 'f-desc' }, 'Details ', h('span', { class: 'opt', text: '(optional)' })), descIn,
+        h('p', { class: 'hint', text: 'Describe what makes it recognizable. Keep one detail back to check the real owner.' })),
+      h('div', { class: 'row2' },
+        h('div', { class: 'field' }, h('label', { for: 'f-place' }, 'Where ', h('span', { class: 'opt', text: '(optional)' })), placeIn),
+        h('div', { class: 'field' }, h('label', { for: 'f-date', text: 'Date' }), dateIn)),
+      h('div', { class: 'field' },
+        h('span', { class: 'lbl', text: 'Photo' }),
+        h('div', { class: 'photo-row' }, prev,
+          h('div', { class: 'photo-side' },
+            h('div', { class: 'photo-btns' }, fileIn, photoLabel, removeBtn),
+            photoMsg))),
+      h('div', { class: 'row2' },
+        h('div', { class: 'field' }, h('label', { for: 'f-who', text: 'Your name' }), whoIn, eWho),
+        h('div', { class: 'field' },
+          h('label', { for: 'f-contact' }, 'How to reach you ', h('span', { class: 'opt', text: '(optional)' })), contactIn,
+          h('p', { class: 'hint', text: 'Anyone who opens this site can see it. Do not use a home address.' }))),
+      formErr,
+      h('div', { class: 'form-actions' },
+        h('button', { type: 'button', class: 'btn', id: 'f-cancel', onclick: closeSheet }, 'Cancel'),
+        submit)
+    );
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (busy || !store) return;
+      var name = nameIn.value.trim(), who = whoIn.value.trim(), bad = null;
+      eName.hidden = true; eWho.hidden = true; formErr.hidden = true;
+      nameIn.removeAttribute('aria-invalid'); whoIn.removeAttribute('aria-invalid');
+      if (!name) { eName.textContent = 'Enter what the item is.'; eName.hidden = false; nameIn.setAttribute('aria-invalid', 'true'); bad = nameIn; }
+      if (!who) { eWho.textContent = 'Enter your name so people know who to ask.'; eWho.hidden = false; whoIn.setAttribute('aria-invalid', 'true'); bad = bad || whoIn; }
+      if (bad) { bad.focus(); return; }
+      var typeEl = form.querySelector('input[name="type"]:checked');
+      var data = {
+        type: typeEl ? typeEl.value : 'lost',
+        name: name,
+        category: catSel.value,
+        description: descIn.value.trim(),
+        place: placeIn.value.trim(),
+        date: dateIn.value || todayStr(),
+        photo: photo,
+        reporter: who,
+        contact: contactIn.value.trim(),
+        status: 'open',
+        createdAt: Date.now()
+      };
+      busy = true; submit.disabled = true;
+      try {
+        await store.add(data);
+        mem.set('name', who); mem.set('contact', data.contact);
+        closeSheet(); toast('Added to the list');
+      } catch (err) {
+        formErr.textContent = failText(err); formErr.hidden = false;
+      } finally { busy = false; submit.disabled = false; }
+    });
+
+    sheet.setAttribute('aria-labelledby', 'form-title');
+    sheet.replaceChildren(
+      h('div', { class: 'sheet-head' },
+        h('h2', { id: 'form-title', class: 'sheet-title', text: 'Report an item' }),
+        h('button', { type: 'button', class: 'icon-btn', id: 'f-close', 'aria-label': 'Close', onclick: closeSheet }, '×')),
+      form
+    );
+    sheet.scrollTop = 0;
+    showSheet('f-name');
+  }
+
+  /* ---------- wiring ---------- */
+  var catFilter = $('#cat');
+  catFilter.append(h('option', { value: '', text: 'All categories' }));
+  CATS.forEach(function (c) { catFilter.append(h('option', { value: c, text: c })); });
+  catFilter.addEventListener('change', function () { filters.cat = catFilter.value; render(); });
+  $('#q').addEventListener('input', function (e) { filters.q = e.target.value.trim(); render(); });
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () { filters[b.dataset.k] = b.dataset.v; syncSeg(); render(); });
+  });
+  addBtn.addEventListener('click', function () { if (!store) { toast('The list is not reachable yet.'); return; } openForm(); });
+
+  function subscribe() {
+    var fresh = false;
+    var timer = setTimeout(function () {
+      if (!fresh) setNote('Still trying to reach the list. What you see may be out of date.');
+    }, 10000);
+    store.subscribe(function (snap) {
+      items = snap.docs.map(function (d) { return norm(d.id, d.data() || {}); });
+      loaded = true;
+      if (!snap.metadata.fromCache) { fresh = true; clearTimeout(timer); setNote(''); }
+      render();
+      if (current && current.mode === 'detail') {
+        var it = byId(current.id);
+        if (it) renderDetail(it);
+        else { closeSheet(); toast('That item was removed'); }
+      }
+    }, function (err) {
+      clearTimeout(timer);
+      setNote(err && err.code === 'permission-denied'
+        ? 'The database rules do not allow reading yet. Publish the rules from SETUP.md.'
+        : 'The list could not be loaded. Reload the page to try again.');
+    });
+  }
+
+  async function init() {
+    render();
+    var cfg = window.LF_FIREBASE || {};
+    if (!cfg.projectId || /^PASTE/.test(cfg.projectId)) {
+      setNote('This site is not connected to a database yet. Follow SETUP.md and paste your Firebase settings into index.html.');
+      return;
+    }
+    try {
+      var mods = await Promise.all([import(FIREBASE_SDK + 'firebase-app.js'), import(FIREBASE_SDK + 'firebase-firestore.js')]);
+      var fs = mods[1];
+      var fdb = fs.getFirestore(mods[0].initializeApp(cfg));
+      store = {
+        subscribe: function (next, err) {
+          return fs.onSnapshot(fs.query(fs.collection(fdb, 'items'), fs.orderBy('createdAt', 'desc')), next, err);
+        },
+        add: function (data) { return fs.addDoc(fs.collection(fdb, 'items'), data); },
+        update: function (id, data) { return fs.updateDoc(fs.doc(fdb, 'items', id), data); }
+      };
+    } catch (e) {
+      setNote('Could not load the database library. Check your internet connection and reload.');
+      return;
+    }
+    addBtn.hidden = false;
+    subscribe();
+    render();
+  }
+  init();
+})();
+</script>
+</body>
+</html>
