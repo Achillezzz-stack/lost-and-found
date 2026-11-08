@@ -123,6 +123,8 @@ h1 {
 .btn-primary:hover { background: var(--action); opacity: .9; }
 .btn-band { background: var(--band-ink); color: var(--band); border-color: var(--band-ink); }
 .btn-band:hover { background: var(--band-ink); opacity: .9; }
+.who { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.who .link-btn { margin-left: 0; color: var(--band-ink); }
 .link-btn {
   border: 0; background: none; padding: 2px 6px; margin-left: 6px; cursor: pointer;
   font: 600 13px var(--font-body); color: var(--ink); text-decoration: underline; text-underline-offset: 3px;
@@ -303,7 +305,9 @@ window.LF_FIREBASE = {
       <p class="lede">Report something you lost or found, add a photo, and mark it returned once it is back with its owner.</p>
     </div>
     <div class="band-side">
+      <button id="signInBtn" class="btn btn-band" type="button" hidden>Sign in with Google</button>
       <button id="addBtn" class="btn btn-band" type="button" hidden>Report an item</button>
+      <p id="whoRow" class="who" hidden><span id="whoText"></span><button id="signOutBtn" class="link-btn" type="button">Sign out</button></p>
       <p id="counts" class="counts" aria-live="polite"></p>
     </div>
   </div>
@@ -338,6 +342,7 @@ window.LF_FIREBASE = {
     </div>
   </section>
   <p id="note" class="note" role="status" hidden></p>
+  <p id="accessNote" class="note" hidden></p>
   <ul id="list" class="grid"></ul>
   <div id="empty" class="empty" hidden></div>
   <noscript><p class="note">This list needs JavaScript. Turn it on in your browser and reload.</p></noscript>
@@ -360,8 +365,10 @@ window.LF_FIREBASE = {
   var $ = function (s) { return document.querySelector(s); };
   var listEl = $('#list'), emptyEl = $('#empty'), noteEl = $('#note');
   var countsEl = $('#counts'), addBtn = $('#addBtn'), overlay = $('#overlay'), sheet = $('#sheet'), toastEl = $('#toast');
+  var signInBtn = $('#signInBtn'), signOutBtn = $('#signOutBtn'), whoRow = $('#whoRow'), whoText = $('#whoText'), accessNote = $('#accessNote');
 
   var store = null, items = [], loaded = false, busy = false;
+  var me = { user: null, member: false, failed: false }, authReady = false, authSeq = 0;
   var current = null, lastFocus = null, toastTimer = 0;
   var filters = { type: 'all', status: 'open', cat: '', q: '' };
 
@@ -422,15 +429,15 @@ window.LF_FIREBASE = {
     get: function (k) { try { return localStorage.getItem('lf-' + k) || ''; } catch (e) { return ''; } },
     set: function (k, v) { try { localStorage.setItem('lf-' + k, v); } catch (e) {} }
   };
-  function toast(msg) {
+  function toast(msg, ms) {
     toastEl.textContent = msg; toastEl.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 3200);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, ms || 3200);
   }
   function setNote(msg) { if (msg) { noteEl.textContent = msg; noteEl.hidden = false; } else noteEl.hidden = true; }
   function failText(e) {
     var c = e && e.code;
-    if (c === 'permission-denied') return 'The database refused that. Check the rules in SETUP.md.';
+    if (c === 'permission-denied') return 'The database refused that. Make sure you are signed in with an approved account and the rules in SETUP.md are published.';
     if (c === 'resource-exhausted') return 'The free daily limit was reached. Try again tomorrow.';
     return 'That did not save. Check your connection and try again.';
   }
@@ -480,7 +487,7 @@ window.LF_FIREBASE = {
       emptyEl.append(
         h('h2', { text: 'Nothing on the list yet' }),
         h('p', { text: 'Lost a water bottle? Found someone’s keys? Report it with a photo and a few details so the owner can recognize it.' }),
-        h('button', { type: 'button', class: 'btn btn-primary', onclick: function () { openForm(); } }, 'Report the first item')
+        me.member ? h('button', { type: 'button', class: 'btn btn-primary', onclick: function () { openForm(); } }, 'Report the first item') : null
       );
       emptyEl.hidden = false; return;
     }
@@ -590,10 +597,14 @@ window.LF_FIREBASE = {
     }
     kids.push(dl);
 
-    kids.push(h('div', { class: 'actions' },
-      h('button', { id: 'd-return', class: 'btn btn-primary', type: 'button', onclick: toggleReturned }, it.status === 'returned' ? 'Reopen' : 'Mark as returned')
-    ));
-    kids.push(h('p', { class: 'fine', text: 'To correct or remove this item, ask the site owner.' }));
+    if (me.member) {
+      kids.push(h('div', { class: 'actions' },
+        h('button', { id: 'd-return', class: 'btn btn-primary', type: 'button', onclick: toggleReturned }, it.status === 'returned' ? 'Reopen' : 'Mark as returned')
+      ));
+      kids.push(h('p', { class: 'fine', text: 'To correct or remove this item, ask the site owner.' }));
+    } else {
+      kids.push(h('p', { class: 'fine', text: 'Only approved members can change an item. If you are one, sign in at the top of the page.' }));
+    }
 
     sheet.setAttribute('aria-labelledby', 'd-title');
     sheet.replaceChildren.apply(sheet, kids);
@@ -602,7 +613,7 @@ window.LF_FIREBASE = {
   }
 
   async function toggleReturned() {
-    if (busy || !store || !current) return;
+    if (busy || !store || !current || !me.member) return;
     var it = byId(current.id); if (!it) return;
     var reopening = it.status === 'returned';
     busy = true;
@@ -655,7 +666,7 @@ window.LF_FIREBASE = {
     var descIn = h('textarea', { id: 'f-desc', class: 'textarea', maxlength: '1000', rows: '4', placeholder: 'Color, brand, stickers, scratches, what is inside, anything that proves it is yours.' });
     var placeIn = h('input', { id: 'f-place', class: 'input', type: 'text', maxlength: '120', placeholder: 'e.g. Library, 2nd floor', autocomplete: 'off' });
     var dateIn = h('input', { id: 'f-date', class: 'input', type: 'date', max: todayStr(), value: todayStr() });
-    var whoIn = h('input', { id: 'f-who', class: 'input', type: 'text', maxlength: '60', value: mem.get('name'), autocomplete: 'name' });
+    var whoIn = h('input', { id: 'f-who', class: 'input', type: 'text', maxlength: '60', value: mem.get('name') || String((me.user && me.user.displayName) || '').slice(0, 60), autocomplete: 'name' });
     var contactIn = h('input', { id: 'f-contact', class: 'input', type: 'text', maxlength: '120', placeholder: 'Chat handle or school email', value: mem.get('contact'), autocomplete: 'off' });
     var eName = h('p', { class: 'err', id: 'e-name', hidden: true });
     var eWho = h('p', { class: 'err', id: 'e-who', hidden: true });
@@ -721,7 +732,7 @@ window.LF_FIREBASE = {
 
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
-      if (busy || !store) return;
+      if (busy || !store || !me.member) return;
       var name = nameIn.value.trim(), who = whoIn.value.trim(), bad = null;
       eName.hidden = true; eWho.hidden = true; formErr.hidden = true;
       nameIn.removeAttribute('aria-invalid'); whoIn.removeAttribute('aria-invalid');
@@ -772,7 +783,28 @@ window.LF_FIREBASE = {
   document.querySelectorAll('.seg button').forEach(function (b) {
     b.addEventListener('click', function () { filters[b.dataset.k] = b.dataset.v; syncSeg(); render(); });
   });
-  addBtn.addEventListener('click', function () { if (!store) { toast('The list is not reachable yet.'); return; } openForm(); });
+  addBtn.addEventListener('click', function () {
+    if (!store) { toast('The list is not reachable yet.'); return; }
+    if (!me.member) { toast('Only approved members can report items.'); return; }
+    openForm();
+  });
+  signInBtn.addEventListener('click', async function () {
+    if (!store) return;
+    signInBtn.disabled = true;
+    try { await store.signIn(); }
+    catch (e) {
+      var c = e && e.code;
+      if (c === 'auth/popup-closed-by-user' || c === 'auth/cancelled-popup-request') { /* closed on purpose */ }
+      else if (c === 'auth/unauthorized-domain') toast('This site’s address is not allowed to sign in yet. Add it under Authorized domains in Firebase Authentication.', 8000);
+      else if (c === 'auth/operation-not-allowed') toast('Google sign-in is not turned on in Firebase Authentication yet.', 8000);
+      else if (c === 'auth/popup-blocked') toast('Your browser blocked the sign-in window. Allow pop-ups for this site and try again.', 8000);
+      else toast('Sign-in did not work. Try again.');
+    } finally { signInBtn.disabled = false; }
+  });
+  signOutBtn.addEventListener('click', function () {
+    if (!store) return;
+    store.signOut().then(function () { toast('Signed out'); }, function () { toast('Could not sign out. Try again.'); });
+  });
 
   function subscribe() {
     var fresh = false;
@@ -797,6 +829,35 @@ window.LF_FIREBASE = {
     });
   }
 
+  function renderAuth() {
+    var u = me.user;
+    signInBtn.hidden = !store || !authReady || !!u;
+    addBtn.hidden = !me.member;
+    whoRow.hidden = !u;
+    if (u) whoText.textContent = (u.displayName || u.email || 'Signed in') + (me.member ? '' : ' (not a member)');
+    var msg = '';
+    if (store && authReady) {
+      if (!u) msg = 'Anyone can browse the list. Only approved members can report items. If you are one, sign in with your Google account.';
+      else if (me.failed) msg = 'Could not check the member list. Reload the page, and make sure the rules in SETUP.md are published.';
+      else if (!me.member) msg = 'You are signed in as ' + (u.email || 'this account') + ', which is not on the member list. Ask the site owner to add this email, then reload the page.';
+    }
+    if (msg) { accessNote.textContent = msg; accessNote.hidden = false; } else accessNote.hidden = true;
+  }
+
+  async function handleAuth(u) {
+    var seq = ++authSeq;
+    var next = { user: u || null, member: false, failed: false };
+    if (u && u.email) {
+      try { next.member = !!(await store.isMember(u.email)) && !!u.emailVerified; }
+      catch (e) { next.failed = true; }
+      if (seq !== authSeq) return;
+    }
+    me = next; authReady = true;
+    renderAuth(); render();
+    if (current && current.mode === 'form' && !me.member) closeSheet();
+    else if (current && current.mode === 'detail') { var it = byId(current.id); if (it) renderDetail(it); }
+  }
+
   async function init() {
     render();
     var cfg = window.LF_FIREBASE || {};
@@ -805,22 +866,35 @@ window.LF_FIREBASE = {
       return;
     }
     try {
-      var mods = await Promise.all([import(FIREBASE_SDK + 'firebase-app.js'), import(FIREBASE_SDK + 'firebase-firestore.js')]);
-      var fs = mods[1];
-      var fdb = fs.getFirestore(mods[0].initializeApp(cfg));
+      var mods = await Promise.all([
+        import(FIREBASE_SDK + 'firebase-app.js'),
+        import(FIREBASE_SDK + 'firebase-firestore.js'),
+        import(FIREBASE_SDK + 'firebase-auth.js')
+      ]);
+      var fs = mods[1], au = mods[2];
+      var fapp = mods[0].initializeApp(cfg);
+      var fdb = fs.getFirestore(fapp);
+      var fauth = au.getAuth(fapp);
       store = {
         subscribe: function (next, err) {
           return fs.onSnapshot(fs.query(fs.collection(fdb, 'items'), fs.orderBy('createdAt', 'desc')), next, err);
         },
         add: function (data) { return fs.addDoc(fs.collection(fdb, 'items'), data); },
-        update: function (id, data) { return fs.updateDoc(fs.doc(fdb, 'items', id), data); }
+        update: function (id, data) { return fs.updateDoc(fs.doc(fdb, 'items', id), data); },
+        isMember: function (email) {
+          return fs.getDoc(fs.doc(fdb, 'members', email.toLowerCase())).then(function (snap) { return snap.exists(); });
+        },
+        signIn: function () { return au.signInWithPopup(fauth, new au.GoogleAuthProvider()); },
+        signOut: function () { return au.signOut(fauth); },
+        onAuth: function (cb) { return au.onAuthStateChanged(fauth, cb); }
       };
     } catch (e) {
       setNote('Could not load the database library. Check your internet connection and reload.');
       return;
     }
-    addBtn.hidden = false;
     subscribe();
+    store.onAuth(handleAuth);
+    renderAuth();
     render();
   }
   init();
