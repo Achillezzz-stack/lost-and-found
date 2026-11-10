@@ -246,6 +246,7 @@ h1 {
 .dl dd { margin: 0; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .fine { margin: 14px 0 0; font-size: 12.5px; color: var(--muted); }
+.claim { display: grid; gap: 14px; margin-top: 4px; }
 
 /* Form */
 .form { display: grid; gap: 18px; }
@@ -369,6 +370,7 @@ window.LF_FIREBASE = {
 
   var store = null, items = [], loaded = false, busy = false;
   var me = { user: null, member: false, failed: false }, authReady = false, authSeq = 0;
+  var closing = false, closingName = '';
   var current = null, lastFocus = null, toastTimer = 0;
   var filters = { type: 'all', status: 'open', cat: '', q: '' };
 
@@ -408,10 +410,17 @@ window.LF_FIREBASE = {
       reporter: str(d.reporter, 60),
       contact: str(d.contact, 120),
       status: d.status === 'returned' ? 'returned' : 'open',
-      createdAt: typeof d.createdAt === 'number' ? d.createdAt : 0
+      createdAt: typeof d.createdAt === 'number' ? d.createdAt : 0,
+      returnedAt: typeof d.returnedAt === 'number' ? d.returnedAt : 0,
+      closedBy: str(d.closedBy, 60)
     };
   }
   function byId(id) { for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i]; return null; }
+  /* The name on a report is the finder for a found item and the owner for a lost one.
+     The name saved when an item is returned is the claimer for a found item and the finder for a lost one. */
+  function nameLabel(it) { return it.type === 'found' ? 'Found by' : 'Lost by'; }
+  function closeLabel(it) { return it.type === 'found' ? 'Claimed by' : 'Found by'; }
+  function fmtTs(ms) { return ms > 0 ? new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function ticket(it) { return 'LF-' + it.id.slice(0, 4).toUpperCase() + (it.category ? ' · ' + it.category : ''); }
   function todayStr() {
     var d = new Date();
@@ -449,7 +458,7 @@ window.LF_FIREBASE = {
     if (filters.status === 'returned' && it.status !== 'returned') return false;
     if (filters.cat && it.category !== filters.cat) return false;
     if (filters.q) {
-      var hay = (it.name + ' ' + it.description + ' ' + it.place + ' ' + it.category + ' ' + it.reporter).toLowerCase();
+      var hay = (it.name + ' ' + it.description + ' ' + it.place + ' ' + it.category + ' ' + it.reporter + ' ' + it.closedBy).toLowerCase();
       var words = filters.q.toLowerCase().split(/\s+/);
       for (var i = 0; i < words.length; i++) if (words[i] && hay.indexOf(words[i]) === -1) return false;
     }
@@ -467,10 +476,11 @@ window.LF_FIREBASE = {
       h('p', { class: 'ticket', text: ticket(it) }),
       h('button', { type: 'button', class: 'card-title', onclick: function () { openDetail(it.id); } }, it.name || 'Untitled item'),
       it.description ? h('p', { class: 'desc', text: it.description }) : null,
-      it.place ? h('div', { class: 'fact' }, h('span', { class: 'k', text: 'Where' }), it.place) : null
+      it.place ? h('div', { class: 'fact' }, h('span', { class: 'k', text: 'Where' }), it.place) : null,
+      it.status === 'returned' && it.closedBy ? h('div', { class: 'fact' }, h('span', { class: 'k', text: closeLabel(it) }), it.closedBy) : null
     );
     var foot = h('div', { class: 'card-foot' },
-      h('span', { text: it.reporter ? 'Reported by ' + it.reporter : 'Reporter not given' }),
+      h('span', { text: it.reporter ? nameLabel(it) + ' ' + it.reporter : 'Name not given' }),
       h('span', { class: 'when', text: (it.type === 'lost' ? 'Lost ' : 'Found ') + fmtDate(it.date) })
     );
     return h('li', { class: 'card' + (it.status === 'returned' ? ' returned' : '') }, photo, body, foot);
@@ -533,7 +543,7 @@ window.LF_FIREBASE = {
   }
   function closeSheet() {
     overlay.hidden = true; document.body.style.overflow = '';
-    sheet.replaceChildren(); current = null;
+    sheet.replaceChildren(); current = null; closing = false; closingName = '';
     if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
   }
   overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) closeSheet(); });
@@ -553,7 +563,7 @@ window.LF_FIREBASE = {
 
   /* ---------- detail ---------- */
   function openDetail(id) {
-    current = { mode: 'detail', id: id };
+    current = { mode: 'detail', id: id }; closing = false; closingName = '';
     renderDetail(byId(id), 'd-close');
   }
 
@@ -590,16 +600,35 @@ window.LF_FIREBASE = {
     if (it.place) row(it.type === 'lost' ? 'Lost at' : 'Found at', it.place);
     if (it.date) row(it.type === 'lost' ? 'Lost on' : 'Found on', fmtDate(it.date));
     if (it.category) row('Category', it.category);
-    row('Reported by', it.reporter || 'Not given');
+    row(nameLabel(it), it.reporter || 'Not given');
+    if (it.status === 'returned') {
+      row(closeLabel(it), it.closedBy || 'Not recorded');
+      if (it.returnedAt) row('Returned on', fmtTs(it.returnedAt));
+    }
     if (it.contact) {
       var cs = h('span', { id: 'd-contact', text: it.contact });
       row('Contact', cs, h('button', { type: 'button', class: 'link-btn', onclick: function () { copyText(it.contact, cs); } }, 'Copy'));
     }
     kids.push(dl);
 
-    if (me.member) {
+    if (me.member && closing && it.status !== 'returned') {
+      var whoIn = h('input', { id: 'd-who', class: 'input', type: 'text', maxlength: '60', value: closingName, autocomplete: 'off', placeholder: 'Full name' });
+      whoIn.addEventListener('input', function () { closingName = whoIn.value; });
+      var eWho = h('p', { class: 'err', id: 'd-who-err', hidden: true });
+      kids.push(h('form', { class: 'claim', novalidate: true, onsubmit: function (e) { e.preventDefault(); doReturn(whoIn, eWho); } },
+        h('div', { class: 'field' },
+          h('label', { for: 'd-who', text: it.type === 'found' ? 'Who is claiming it?' : 'Who found it?' }),
+          whoIn, eWho,
+          h('p', { class: 'hint', text: 'This name is saved on the item and shown to everyone.' })),
+        h('div', { class: 'actions' },
+          h('button', { id: 'd-confirm', class: 'btn btn-primary', type: 'submit' }, 'Mark as returned'),
+          h('button', { id: 'd-cancel', class: 'btn', type: 'button', onclick: function () { closing = false; closingName = ''; renderDetail(byId(it.id), 'd-return'); } }, 'Cancel'))));
+    } else if (me.member) {
       kids.push(h('div', { class: 'actions' },
-        h('button', { id: 'd-return', class: 'btn btn-primary', type: 'button', onclick: toggleReturned }, it.status === 'returned' ? 'Reopen' : 'Mark as returned')
+        h('button', { id: 'd-return', class: 'btn btn-primary', type: 'button', onclick: function () {
+          if (it.status === 'returned') reopen();
+          else { closing = true; closingName = ''; renderDetail(byId(it.id), 'd-who'); }
+        } }, it.status === 'returned' ? 'Reopen' : 'Mark as returned')
       ));
       kids.push(h('p', { class: 'fine', text: 'To correct or remove this item, ask the site owner.' }));
     } else {
@@ -612,14 +641,31 @@ window.LF_FIREBASE = {
     showSheet(focusId || (keep && document.getElementById(keep) ? keep : 'd-close'));
   }
 
-  async function toggleReturned() {
+  async function doReturn(input, errEl) {
     if (busy || !store || !current || !me.member) return;
     var it = byId(current.id); if (!it) return;
-    var reopening = it.status === 'returned';
+    var name = input.value.trim();
+    if (!name) {
+      errEl.textContent = 'Enter a name.'; errEl.hidden = false;
+      input.setAttribute('aria-invalid', 'true'); input.focus();
+      return;
+    }
     busy = true;
     try {
-      await store.update(it.id, reopening ? { status: 'open', returnedAt: 0 } : { status: 'returned', returnedAt: Date.now() });
-      toast(reopening ? 'Moved back to open' : 'Marked as returned');
+      await store.update(it.id, { status: 'returned', returnedAt: Date.now(), closedBy: name });
+      closing = false; closingName = '';
+      toast('Marked as returned');
+    } catch (e) { toast(failText(e)); }
+    finally { busy = false; }
+  }
+
+  async function reopen() {
+    if (busy || !store || !current || !me.member) return;
+    var it = byId(current.id); if (!it) return;
+    busy = true;
+    try {
+      await store.update(it.id, { status: 'open', returnedAt: 0, closedBy: '' });
+      toast('Moved back to open');
     } catch (e) { toast(failText(e)); }
     finally { busy = false; }
   }
@@ -671,6 +717,14 @@ window.LF_FIREBASE = {
     var eName = h('p', { class: 'err', id: 'e-name', hidden: true });
     var eWho = h('p', { class: 'err', id: 'e-who', hidden: true });
     var formErr = h('p', { class: 'form-error', id: 'f-error', role: 'alert', hidden: true });
+    var whoLbl = h('label', { for: 'f-who', id: 'f-who-lbl' });
+    var whoHint = h('p', { class: 'hint', id: 'f-who-hint' });
+    function syncWho() {
+      var r = form.querySelector('input[name="type"]:checked');
+      var isFound = !!r && r.value === 'found';
+      whoLbl.textContent = isFound ? 'Finder’s name' : 'Owner’s name';
+      whoHint.textContent = isFound ? 'Who found it. This can be you.' : 'Who lost it. This can be you.';
+    }
 
     var prev = h('div', { class: 'photo-preview', id: 'f-prev' });
     var photoMsg = h('p', { class: 'hint', id: 'f-photo-msg', text: 'JPG or PNG. Large photos are shrunk to fit.' });
@@ -720,7 +774,7 @@ window.LF_FIREBASE = {
             h('div', { class: 'photo-btns' }, fileIn, photoLabel, removeBtn),
             photoMsg))),
       h('div', { class: 'row2' },
-        h('div', { class: 'field' }, h('label', { for: 'f-who', text: 'Your name' }), whoIn, eWho),
+        h('div', { class: 'field' }, whoLbl, whoIn, eWho, whoHint),
         h('div', { class: 'field' },
           h('label', { for: 'f-contact' }, 'How to reach you ', h('span', { class: 'opt', text: '(optional)' })), contactIn,
           h('p', { class: 'hint', text: 'Anyone who opens this site can see it. Do not use a home address.' }))),
@@ -730,6 +784,9 @@ window.LF_FIREBASE = {
         submit)
     );
 
+    form.querySelectorAll('input[name="type"]').forEach(function (r) { r.addEventListener('change', syncWho); });
+    syncWho();
+
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       if (busy || !store || !me.member) return;
@@ -737,7 +794,7 @@ window.LF_FIREBASE = {
       eName.hidden = true; eWho.hidden = true; formErr.hidden = true;
       nameIn.removeAttribute('aria-invalid'); whoIn.removeAttribute('aria-invalid');
       if (!name) { eName.textContent = 'Enter what the item is.'; eName.hidden = false; nameIn.setAttribute('aria-invalid', 'true'); bad = nameIn; }
-      if (!who) { eWho.textContent = 'Enter your name so people know who to ask.'; eWho.hidden = false; whoIn.setAttribute('aria-invalid', 'true'); bad = bad || whoIn; }
+      if (!who) { eWho.textContent = 'Enter a name so people know who to ask.'; eWho.hidden = false; whoIn.setAttribute('aria-invalid', 'true'); bad = bad || whoIn; }
       if (bad) { bad.focus(); return; }
       var typeEl = form.querySelector('input[name="type"]:checked');
       var data = {
